@@ -1,0 +1,6 @@
+{
+  "name": "GT7 Tuning Helper",
+  "description": "Gran Turismo 7 car setup helper with cloud sync, community sharing, and Google Drive export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
