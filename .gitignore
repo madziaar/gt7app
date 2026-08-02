@@ -1,8 +1,25 @@
-node_modules/
-build/
+# Examples 1:
+
+# Example 2 (Project with artifacts):
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
 dist/
-coverage/
-.DS_Store
+build/
+# Dependencies
+.venv/
+venv/
+node_modules/
+# Logs and temp files
 *.log
-.env*
-!.env.example
+*.tmp
+*.swp
+# Environment
+.env
+.env.local
+.env.*
+# Editors
+.vscode/
+.idea/
