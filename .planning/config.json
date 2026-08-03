@@ -1,0 +1,28 @@
+{
+  "workflow": {
+    "text_mode": false,
+    "mvp_mode": true,
+    "tdd_mode": false,
+    "commit_docs": true,
+    "granularity": "standard"
+  },
+  "models": {
+    "researcher_model": "inherit",
+    "planner_model": "inherit",
+    "checker_model": "inherit",
+    "executor_model": "inherit"
+  },
+  "project": {
+    "name": "GT7 Tuning Helper",
+    "type": "brownfield",
+    "stack": ["React", "TypeScript", "Vite", "Express", "Firebase", "TailwindCSS"]
+  },
+  "phase_tracking": {
+    "current_phase": 1,
+    "total_phases": 4,
+    "phase_1_status": "planning_complete",
+    "phase_2_status": "pending",
+    "phase_3_status": "pending",
+    "phase_4_status": "pending"
+  }
+}
