@@ -29,13 +29,106 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const SETUPS_FILE = path.join(DATA_DIR, "community_setups.json");
+const COMMUNITY_TUNING_KEYS = [
+  "frontDownforce",
+  "rearDownforce",
+  "frontRideHeight",
+  "rearRideHeight",
+  "frontNF",
+  "rearNF",
+  "frontARB",
+  "rearARB",
+  "frontComp",
+  "rearComp",
+  "frontExp",
+  "rearExp",
+  "frontCamber",
+  "rearCamber",
+  "frontToe",
+  "rearToe",
+  "initTorque",
+  "accelSens",
+  "brakingSens",
+  "topSpeed",
+  "finalDrive",
+  "brakeBalance"
+] as const;
+
+type CommunitySetupRecord = {
+  carModel: string;
+  track: string;
+  likes: number;
+  rating: number;
+  tuning: Record<string, number>;
+  [key: string]: unknown;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeTuning(rawTuning: unknown) {
+  if (!isPlainObject(rawTuning)) return {};
+
+  const normalized: Record<string, number> = {};
+  for (const key of COMMUNITY_TUNING_KEYS) {
+    const numericValue = normalizeNumber(rawTuning[key]);
+    if (numericValue !== null) {
+      normalized[key] = numericValue;
+    }
+  }
+  return normalized;
+}
+
+function normalizeCommunitySetup(rawSetup: unknown): CommunitySetupRecord | null {
+  if (!isPlainObject(rawSetup)) return null;
+
+  const carModel = typeof rawSetup.carModel === "string" ? rawSetup.carModel.trim() : "";
+  const track = typeof rawSetup.track === "string" ? rawSetup.track.trim() : "";
+  const tuning = normalizeTuning(rawSetup.tuning);
+
+  if (!carModel || !track || Object.keys(tuning).length === 0) {
+    return null;
+  }
+
+  return {
+    ...rawSetup,
+    carModel,
+    track,
+    likes: Number(rawSetup.likes ?? 0) || 0,
+    rating: normalizeNumber(rawSetup.rating) ?? 0,
+    tuning
+  };
+}
 
 // Helper to read community setups
 function getCommunitySetups() {
   try {
     if (fs.existsSync(SETUPS_FILE)) {
       const data = fs.readFileSync(SETUPS_FILE, "utf-8");
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) {
+        throw new Error("Community setup store is not an array");
+      }
+
+      const normalized = parsed
+        .map(normalizeCommunitySetup)
+        .filter((entry): entry is CommunitySetupRecord => entry !== null);
+
+      if (normalized.length !== parsed.length) {
+        console.warn("Skipped malformed community setup entries during read.");
+      }
+
+      return normalized;
     }
   } catch (error) {
     console.error("Error reading community setups:", error);
@@ -46,9 +139,15 @@ function getCommunitySetups() {
 // Helper to save community setups
 function saveCommunitySetups(setups: any[]) {
   try {
-    fs.writeFileSync(SETUPS_FILE, JSON.stringify(setups, null, 2), "utf-8");
+    const safeSetups = setups
+      .map(normalizeCommunitySetup)
+      .filter((entry): entry is CommunitySetupRecord => entry !== null);
+
+    fs.writeFileSync(SETUPS_FILE, JSON.stringify(safeSetups, null, 2), "utf-8");
+    return true;
   } catch (error) {
     console.error("Error saving community setups:", error);
+    return false;
   }
 }
 
@@ -641,21 +740,24 @@ app.get("/api/community/setups", (req, res) => {
 
 app.post("/api/community/setups", (req, res) => {
   try {
-    const newSetup = req.body;
-    if (!newSetup.carModel || !newSetup.track || !newSetup.tuning) {
-      return res.status(400).json({ error: "Missing required fields" });
+    const candidate = normalizeCommunitySetup(req.body);
+    if (!candidate) {
+      return res.status(400).json({ error: "Missing required fields or invalid tuning payload" });
     }
 
     const setups = getCommunitySetups();
     const setupWithId = {
-      ...newSetup,
+      ...candidate,
       id: "setup_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
       likes: 0,
       createdAt: new Date().toISOString()
     };
 
     setups.unshift(setupWithId);
-    saveCommunitySetups(setups);
+    const saved = saveCommunitySetups(setups);
+    if (!saved) {
+      return res.status(500).json({ error: "Community setup could not be saved." });
+    }
 
     res.status(201).json(setupWithId);
   } catch (error: any) {
@@ -667,15 +769,24 @@ app.post("/api/community/setups/:id/like", (req, res) => {
   try {
     const { id } = req.params;
     const setups = getCommunitySetups();
-    const setup = setups.find((s: any) => s.id === id);
-    if (!setup) {
+    const setupIndex = setups.findIndex((s: any) => s.id === id);
+    if (setupIndex === -1) {
       return res.status(404).json({ error: "Setup not found" });
     }
 
-    setup.likes = (setup.likes || 0) + 1;
-    saveCommunitySetups(setups);
+    const currentLikes = normalizeNumber(setups[setupIndex].likes) ?? 0;
+    const updatedSetup = {
+      ...setups[setupIndex],
+      likes: currentLikes + 1
+    };
 
-    res.json(setup);
+    setups[setupIndex] = updatedSetup;
+    const saved = saveCommunitySetups(setups);
+    if (!saved) {
+      return res.status(500).json({ error: "Like could not be saved." });
+    }
+
+    res.json(updatedSetup);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
