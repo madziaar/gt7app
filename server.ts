@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import OpenAI from "openai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -12,7 +13,7 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
-// Initialize Google GenAI
+// Initialize AI clients
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "dummy-key",
   httpOptions: {
@@ -20,6 +21,11 @@ const ai = new GoogleGenAI({
       "User-Agent": "aistudio-build",
     },
   },
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "dummy-key",
+  dangerouslyAllowBrowser: false,
 });
 
 // Paths for persistent data store in JSON files
@@ -235,7 +241,7 @@ if (getCommunitySetups().length === 0) {
 // Gemini model endpoint
 app.post("/api/gemini/generate", async (req, res) => {
   try {
-    const { message, history, mode, carModel, track, currentTuning, nvidiaModel } = req.body;
+    const { message, history, mode, carModel, track, currentTuning, nvidiaModel, provider } = req.body;
 
     const systemInstruction = `You are an expert Gran Turismo 7 Race Engineer and Setup Specialist.
 Your job is to diagnose handling problems and suggest exact tuning fixes based on the provided GT7 Tuning Cheat Sheet.
@@ -325,6 +331,87 @@ Use markdown for formatting.`;
       }
 
       return res.json({ text });
+    }
+
+    type ChatProvider = "auto" | "gemini" | "openai" | "openrouter";
+    const isChatProvider = (value: unknown): value is ChatProvider =>
+      value === "auto" || value === "gemini" || value === "openai" || value === "openrouter";
+    if (provider !== undefined && !isChatProvider(provider)) {
+      return res.status(400).json({ error: "Unsupported AI provider selection." });
+    }
+    const requestedProvider = provider === undefined ? "auto" : provider;
+    const configuredOpenRouterKey = process.env.OPENROUTER_API_KEY;
+    const configuredOpenAIKey = process.env.OPENAI_API_KEY;
+    const configuredGeminiKey = process.env.GEMINI_API_KEY;
+    const selectedProvider = requestedProvider === "auto"
+      ? (configuredGeminiKey ? "gemini" : configuredOpenAIKey ? "openai" : configuredOpenRouterKey ? "openrouter" : null)
+      : requestedProvider;
+
+    if (!selectedProvider) {
+      return res.status(400).json({ error: "No AI provider is configured. Add a Gemini, OpenAI, or OpenRouter API key." });
+    }
+    if (selectedProvider === "gemini" && !configuredGeminiKey) {
+      return res.status(400).json({ error: "GEMINI_API_KEY is not configured." });
+    }
+    if (selectedProvider === "openai" && !configuredOpenAIKey) {
+      return res.status(400).json({ error: "OPENAI_API_KEY is not configured." });
+    }
+    if (selectedProvider === "openrouter" && !configuredOpenRouterKey) {
+      return res.status(400).json({ error: "OPENROUTER_API_KEY is not configured." });
+    }
+    if (mode === "search" && selectedProvider !== "gemini") {
+      return res.status(400).json({ error: "Search Web mode requires Gemini's Google Search grounding. Select Gemini or Auto with a Gemini key configured." });
+    }
+
+    const chatMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+      { role: "system", content: systemInstruction },
+      ...contents.map((entry) => ({
+        role: (entry.role === "user" ? "user" : "assistant") as "user" | "assistant",
+        content: entry.parts?.map((part: any) => part.text || "").join("\n") || ""
+      }))
+    ];
+
+    if (selectedProvider === "openrouter") {
+      const selectedOpenRouterModel = "openai/gpt-4o-mini";
+
+      const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${configuredOpenRouterKey}`,
+          "HTTP-Referer": process.env.APP_URL || "http://localhost:3000",
+          "X-Title": "GT7 Tuning Helper"
+        },
+        body: JSON.stringify({
+          model: selectedOpenRouterModel,
+          messages: chatMessages,
+          temperature: mode === "thinking" ? 0.35 : 0.7,
+          top_p: 0.9,
+          max_tokens: 4096
+        })
+      });
+
+      if (!openRouterResponse.ok) {
+        const errText = await openRouterResponse.text();
+        throw new Error(`OpenRouter API response error (${openRouterResponse.status}): ${errText}`);
+      }
+
+      const openRouterResult = await openRouterResponse.json() as any;
+      const openRouterText = openRouterResult?.choices?.[0]?.message?.content || "";
+      return res.json({ text: openRouterText });
+    }
+
+    if (selectedProvider === "openai") {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: chatMessages,
+        temperature: mode === "thinking" ? 0.35 : 0.7,
+        top_p: 0.9,
+        max_tokens: 4096,
+      });
+
+      const openAIText = completion.choices?.[0]?.message?.content || "";
+      return res.json({ text: openAIText });
     }
 
     let modelName = "gemini-3.5-flash";
@@ -726,6 +813,21 @@ Example structure:
     console.error("NVIDIA Multi-Agent Simulation Error:", error);
     res.status(500).json({ error: error.message || "Failed to generate multi-agent setup simulation." });
   }
+});
+
+app.get("/api/providers", (_req, res) => {
+  res.json({
+    gemini: Boolean(process.env.GEMINI_API_KEY),
+    nvidia: Boolean(process.env.NVIDIA_API_KEY),
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+    status: {
+      gemini: process.env.GEMINI_API_KEY ? "configured" : "missing",
+      nvidia: process.env.NVIDIA_API_KEY ? "configured" : "missing",
+      openai: process.env.OPENAI_API_KEY ? "configured" : "missing",
+      openrouter: process.env.OPENROUTER_API_KEY ? "configured" : "missing",
+    }
+  });
 });
 
 // Community sharing endpoints
