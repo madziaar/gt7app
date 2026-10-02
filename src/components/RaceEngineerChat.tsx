@@ -17,6 +17,8 @@ interface RaceEngineerChatProps {
   onTriggerMessageClear: () => void;
 }
 
+type ChatProvider = "auto" | "gemini" | "openai" | "openrouter";
+
 export default function RaceEngineerChat({
   carModel,
   track,
@@ -28,12 +30,55 @@ export default function RaceEngineerChat({
 }: RaceEngineerChatProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [providerStatus, setProviderStatus] = useState({ gemini: false, nvidia: false, openai: false, openrouter: false });
   const [mode, setMode] = useState<"standard" | "thinking" | "search" | "nvidia">("standard");
+  const [selectedProvider, setSelectedProvider] = useState<ChatProvider>("auto");
   const [selectedNvidiaModel, setSelectedNvidiaModel] = useState<string>(
     NVIDIA_MODELS[0]?.id || "nvidia/nemotron-3-super-120b-a12b"
   );
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchProviders = async () => {
+      try {
+        const response = await fetch("/api/providers");
+        if (!response.ok) return;
+        const data = await response.json();
+        setProviderStatus({
+          gemini: Boolean(data.gemini),
+          nvidia: Boolean(data.nvidia),
+          openai: Boolean(data.openai),
+          openrouter: Boolean(data.openrouter),
+        });
+      } catch (error) {
+        console.warn("Could not load AI provider status", error);
+      }
+    };
+
+    fetchProviders();
+  }, []);
+
+  const canUseMode = (desiredMode: "standard" | "thinking" | "search" | "nvidia") => {
+    if (desiredMode === "nvidia") return providerStatus.nvidia;
+    if (desiredMode === "search") {
+      return selectedProvider === "auto"
+        ? providerStatus.gemini
+        : selectedProvider === "gemini" && providerStatus.gemini;
+    }
+    if (selectedProvider === "gemini") return providerStatus.gemini;
+    if (selectedProvider === "openai") return providerStatus.openai;
+    if (selectedProvider === "openrouter") return providerStatus.openrouter;
+    return providerStatus.gemini || providerStatus.openai || providerStatus.openrouter;
+  };
+
+  const handleProviderChange = (value: string) => {
+    if (value !== "auto" && value !== "gemini" && value !== "openai" && value !== "openrouter") return;
+    setSelectedProvider(value);
+    if (mode === "search" && value !== "auto" && value !== "gemini") {
+      setMode("standard");
+    }
+  };
 
   // Monitor trigger message from track segment advisor
   useEffect(() => {
@@ -47,10 +92,46 @@ export default function RaceEngineerChat({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
+  const handleModeChange = (nextMode: "standard" | "thinking" | "search" | "nvidia") => {
+    if (!canUseMode(nextMode)) {
+      const providerLabel = nextMode === "nvidia"
+        ? "NVIDIA"
+        : nextMode === "search"
+          ? "Search Web requires Gemini with a configured API key"
+          : `${selectedProvider === "auto" ? "An AI provider" : selectedProvider} is not configured`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "model",
+          text: `⚠️ ${providerLabel}. Select an available provider or configure its API key.`,
+        },
+      ]);
+      return;
+    }
+
+    setMode(nextMode);
+  };
+
   const handleSendMessage = async (e?: React.FormEvent, customPrompt?: string) => {
     if (e) e.preventDefault();
     const promptToSend = customPrompt || input;
     if (!promptToSend.trim() || isLoading) return;
+
+    if (!canUseMode(mode)) {
+      const providerLabel = mode === "nvidia"
+        ? "NVIDIA"
+        : mode === "search"
+          ? "Search Web requires Gemini with a configured API key"
+          : `${selectedProvider === "auto" ? "An AI provider" : selectedProvider} is not configured`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "model",
+          text: `⚠️ ${providerLabel}. Select an available provider or configure its API key.`,
+        },
+      ]);
+      return;
+    }
 
     const userMessage: Message = { role: "user", text: promptToSend };
     setMessages((prev) => [...prev, userMessage]);
@@ -69,14 +150,14 @@ export default function RaceEngineerChat({
           track,
           currentTuning,
           nvidiaModel: selectedNvidiaModel,
+          provider: selectedProvider,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to generate race advice. Check server status.");
-      }
-
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate race advice. Check server status.");
+      }
       setMessages((prev) => [...prev, { role: "model", text: data.text }]);
     } catch (err: any) {
       console.error(err);
@@ -84,7 +165,7 @@ export default function RaceEngineerChat({
         ...prev,
         {
           role: "model",
-          text: `⚠️ **Error connecting to race engine:** ${err.message}. Please verify your server is running and the Gemini API key is configured.`,
+          text: `⚠️ **Error connecting to race engine:** ${err.message}. Check that the selected provider is configured and available.`,
         },
       ]);
     } finally {
@@ -111,79 +192,112 @@ export default function RaceEngineerChat({
   return (
     <div className="flex flex-col bg-zinc-900 border border-zinc-800 rounded-xl h-[600px] shadow-2xl overflow-hidden">
       {/* Header */}
-      <div className="bg-zinc-950 p-4 border-b border-zinc-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="bg-zinc-950 p-4 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
           <div className="p-2 bg-red-600 rounded-lg text-white">
             <Bot className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="font-sans font-bold text-sm tracking-wide text-white uppercase">
               Race Engineer AI
             </h3>
-            <p className="text-xs text-zinc-400 font-mono">
-              Powered by Gemini & Flux89 Cheat Sheet
+            <p className="text-xs text-zinc-400 font-mono truncate">
+              GT7 setup guidance across multiple AI providers
             </p>
           </div>
         </div>
 
-        <button
-          onClick={clearChat}
-          className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-lg transition"
-          title="Clear Chat"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <label className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-medium">
+            <span>Provider</span>
+            <select
+              value={selectedProvider}
+              onChange={(event) => handleProviderChange(event.target.value)}
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] text-zinc-200 focus:outline-none focus:border-red-600"
+              aria-label="AI chat provider"
+            >
+              <option value="auto">Auto</option>
+              <option value="gemini" disabled={!providerStatus.gemini}>Gemini</option>
+              <option value="openai" disabled={!providerStatus.openai}>OpenAI</option>
+              <option value="openrouter" disabled={!providerStatus.openrouter}>OpenRouter</option>
+            </select>
+          </label>
+          <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[10px] font-medium">
+            <span className={`h-2 w-2 rounded-full ${providerStatus.gemini ? "bg-emerald-400" : "bg-zinc-500"}`} />
+            <span className={providerStatus.gemini ? "text-emerald-300" : "text-zinc-400"}>Gemini</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[10px] font-medium">
+            <span className={`h-2 w-2 rounded-full ${providerStatus.nvidia ? "bg-emerald-400" : "bg-zinc-500"}`} />
+            <span className={providerStatus.nvidia ? "text-emerald-300" : "text-zinc-400"}>NVIDIA</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[10px] font-medium">
+            <span className={`h-2 w-2 rounded-full ${providerStatus.openai ? "bg-emerald-400" : "bg-zinc-500"}`} />
+            <span className={providerStatus.openai ? "text-emerald-300" : "text-zinc-400"}>OpenAI</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[10px] font-medium">
+            <span className={`h-2 w-2 rounded-full ${providerStatus.openrouter ? "bg-emerald-400" : "bg-zinc-500"}`} />
+            <span className={providerStatus.openrouter ? "text-emerald-300" : "text-zinc-400"}>OpenRouter</span>
+          </div>
+          <button
+            onClick={clearChat}
+            className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-lg transition"
+            title="Clear Chat"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Mode Selectors */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-zinc-950 border-b border-zinc-800 text-xs">
         <button
           type="button"
-          onClick={() => setMode("standard")}
+          onClick={() => handleModeChange("standard")}
           className={`flex items-center justify-center gap-2 py-2 px-1 rounded-lg font-medium transition ${
             mode === "standard"
               ? "bg-zinc-800 text-red-500 border border-zinc-700"
               : "text-zinc-400 hover:text-zinc-200"
-          }`}
+          } ${!canUseMode("standard") ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={canUseMode("standard") ? "Uses the selected chat provider for GT7 tuning guidance" : "Selected provider is not configured"}
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>Standard</span>
         </button>
         <button
           type="button"
-          onClick={() => setMode("thinking")}
+          onClick={() => handleModeChange("thinking")}
           className={`flex items-center justify-center gap-2 py-2 px-1 rounded-lg font-medium transition ${
             mode === "thinking"
               ? "bg-zinc-800 text-amber-500 border border-zinc-700"
               : "text-zinc-400 hover:text-zinc-200"
-          }`}
-          title="Uses Gemini 3.1 Pro High Thinking for deep setup physics reasoning"
+          } ${!canUseMode("thinking") ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={canUseMode("thinking") ? "Uses the selected provider for detailed setup reasoning" : "Selected provider is not configured"}
         >
           <Brain className="w-3.5 h-3.5" />
           <span>Deep Thinking</span>
         </button>
         <button
           type="button"
-          onClick={() => setMode("search")}
+          onClick={() => handleModeChange("search")}
           className={`flex items-center justify-center gap-2 py-2 px-1 rounded-lg font-medium transition ${
             mode === "search"
               ? "bg-zinc-800 text-blue-400 border border-zinc-700"
               : "text-zinc-400 hover:text-zinc-200"
-          }`}
-          title="Uses Google Search Grounding to find actual community tunes for specific cars"
+          } ${!canUseMode("search") ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={canUseMode("search") ? "Uses Gemini Google Search grounding to find current setup advice" : "Live web search requires Gemini with a configured API key"}
         >
           <Globe className="w-3.5 h-3.5" />
           <span>Search Web</span>
         </button>
         <button
           type="button"
-          onClick={() => setMode("nvidia")}
+          onClick={() => handleModeChange("nvidia")}
           className={`flex items-center justify-center gap-2 py-2 px-1 rounded-lg font-medium transition ${
             mode === "nvidia"
               ? "bg-zinc-800 text-emerald-400 border border-zinc-700"
               : "text-zinc-400 hover:text-zinc-200"
-          }`}
-          title="Uses physics-optimized NVIDIA Large Language Models for mechanical diagnostics"
+          } ${!providerStatus.nvidia ? "opacity-50 cursor-not-allowed" : ""}`}
+          title={providerStatus.nvidia ? "Uses physics-optimized NVIDIA Large Language Models for mechanical diagnostics" : "NVIDIA is not configured in this environment"}
         >
           <Cpu className="w-3.5 h-3.5" />
           <span>NVIDIA AI</span>

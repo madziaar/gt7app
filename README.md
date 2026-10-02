@@ -13,16 +13,16 @@ View this app in AI Studio: https://ai.studio/apps/035d17f3-708c-4186-a75f-0f23d
 - **Cloud Sync**: Save and sync your car setups to the cloud
 - **Community Sharing**: Share and browse community-created setups
 - **Google Drive Export**: Export your setups directly to Google Drive
-- **AI-Powered Assistance**: Get tuning recommendations from Gemini AI
+- **AI-Powered Assistance**: Get tuning recommendations from Gemini, OpenAI, or OpenRouter, with NVIDIA Nemotron available for specialized diagnostics
 - **Setup Comparison**: Compare different car setups side by side
 - **Lap Time Dashboard**: Track and analyze your lap times
 
 ## Prerequisites
 
-- Node.js (v18 or higher recommended)
+- Node.js v22 or newer
 - npm or yarn
-- A Gemini API key (for AI features)
-- NVIDIA API key (for NVIDIA Nemotron reasoning models)
+- At least one optional AI provider key to enable AI chat (Gemini, OpenAI, or OpenRouter)
+- NVIDIA API key for NVIDIA Nemotron diagnostics and tuning generation
 
 ## Run Locally
 
@@ -41,7 +41,11 @@ View this app in AI Studio: https://ai.studio/apps/035d17f3-708c-4186-a75f-0f23d
    Edit `.env.local` and set the following:
    - `GEMINI_API_KEY`: Your Gemini API key for AI features
    - `APP_URL`: The URL where your app is hosted (optional for local development)
-   - `NVIDIA_API_KEY`: Your NVIDIA API key for accessing Nemotron models
+   - `OPENAI_API_KEY`: Optional key for direct OpenAI chat
+   - `OPENROUTER_API_KEY`: Optional key for OpenRouter model routing
+   - `NVIDIA_API_KEY`: Optional key for NVIDIA Nemotron models and diagnostics
+
+   Select a configured provider in the Race Engineer chat, or leave it on Auto to prefer Gemini, then OpenAI, then OpenRouter. Live web search uses Gemini's Google Search grounding and is available only when Gemini is configured.
 
 3. **Run the development server:**
    ```bash
@@ -87,7 +91,7 @@ View this app in AI Studio: https://ai.studio/apps/035d17f3-708c-4186-a75f-0f23d
 - **Frontend**: React 19, TypeScript, Vite
 - **Styling**: Tailwind CSS, Motion (animations), Lucide React (icons)
 - **Backend**: Express.js, tsx
-- **AI**: Google Generative AI (Gemini), NVIDIA Nemotron
+- **AI**: Google Generative AI (Gemini), OpenAI SDK, OpenRouter-compatible chat completions, NVIDIA Nemotron
 - **Cloud**: Firebase, Google APIs
 - **Data Visualization**: Recharts
 
@@ -111,8 +115,10 @@ This app is designed to run on Google AI Studio and can be deployed to Cloud Run
 When deploying, ensure the following secrets are configured:
 
 - `GEMINI_API_KEY`: Required for Gemini AI API calls
+- `OPENAI_API_KEY`: Optional for direct OpenAI chat
+- `OPENROUTER_API_KEY`: Optional for OpenRouter chat routing
 - `APP_URL`: The URL where your app is hosted
-- `NVIDIA_API_KEY`: Required for NVIDIA Nemotron models
+- `NVIDIA_API_KEY`: Optional for NVIDIA Nemotron models
 
 ## License
 
