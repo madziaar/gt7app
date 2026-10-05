@@ -44,20 +44,29 @@ and API changes by running the server.
 
 ## The tuning param contract is duplicated — check all of these
 
-The 22 `TuningParams` keys are hand-written out in five places. Changing or adding one means
-editing every one:
+The 22 `TuningParams` keys (`TuningParams` has exactly 22 `: number` fields, matching
+`COMMUNITY_TUNING_KEYS`) are hand-written out in six places. Changing or adding one means editing
+every one:
 
 1. `src/types.ts` — `TuningParams` interface
 2. `src/constants.ts` — `getBaselineTuning()` (values are branched by `carClass`,
    `drivetrain`, `weather`) and `CAR_PRESETS`
-3. `server.ts` — `COMMUNITY_TUNING_KEYS` allowlist, plus the key/range lists inside the
-   `/api/nvidia/*` prompt strings
-4. `src/components/TuningDetails.tsx` — 23 inline `<input type="range">` elements with literal
+3. `server.ts` — `COMMUNITY_TUNING_KEYS` allowlist, plus the key/range lists inside **both**
+   `/api/nvidia/*` prompt strings (lines ~477-499 and ~625-647, which must stay identical)
+4. `src/components/TuningDetails.tsx` — inline `<input type="range">` elements with literal
    `min`/`max` attributes
-5. `src/googleSync.ts` — the Google Sheets header array and row order (positional)
+5. `src/components/SetupComparer.tsx` — all 22 keys listed in the side-by-side comparison table
+6. `src/googleSync.ts` — the Google Sheets header array and row order (positional; the write
+   targets a hardcoded `Sheet1!A1:AD{n}` range)
 
 `normalizeTuning()` **silently drops** any key not in `COMMUNITY_TUNING_KEYS`, so a new param
 that isn't added there will disappear from community setups with no error.
+
+**`frontToe` and `rearToe` have no slider.** `TuningDetails.tsx` renders only 20 tuning sliders
+via `updateParam()`; toe is only set by `getBaselineTuning()`, the AI responses, and the
+community seed. Don't assume every `TuningParams` key is user-editable in the garage UI. (The
+file has 23 `type="range"` inputs, but three are telemetry sim controls — ambient temp and two
+tire pressures — not tuning params.)
 
 ## AI endpoints
 
