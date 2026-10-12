@@ -7,7 +7,7 @@ GT7 Tuning Helper is a Gran Turismo 7 setup and race-engineering app for car set
 Provide a single-page tuning workspace that helps players diagnose handling issues, tune setups for specific tracks, compare changes, and save/share setups with a lightweight local-first persistence model.
 
 ## Current State
-The repository already contains a Vite + React frontend, an Express server, a local JSON persistence flow for community setups, and AI-backed tuning generation from Gemini/NVIDIA providers.
+The repository already contains a Vite + React frontend, an Express server, a local JSON persistence flow for community setups, and AI-backed tuning generation from Gemini/NVIDIA/OpenAI providers.
 
 ## Key Constraints
 - Frontend and backend remain in one repository with a Vite React single-page experience.
@@ -22,4 +22,4 @@ The repository already contains a Vite + React frontend, an Express server, a lo
 - The app stays buildable and type-safe under the configured TypeScript stack.
 
 ## Scope
-This tracked workflow will cover the GT7 tuning workflows, integration boundaries, and a phased implementation plan for future delivery and verification.
+This tracked workflow covers the GT7 tuning workflows, integration boundaries, and a phased implementation plan for delivery and verification.
